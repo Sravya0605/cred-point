@@ -75,15 +75,12 @@ def logout():
 @login_required
 def dashboard():
     """User dashboard with ultra-fast queries"""
-    # Single optimized query with minimal data
-    certifications = Certification.query.filter_by(user_id=current_user.id)\
-                                       .options(db.defer('created_at'))\
-                                       .all()
+    # Optimized queries
+    certifications = Certification.query.filter_by(user_id=current_user.id).all()
     
     # Limit recent activities to just 3 for faster loading
     recent_activities = CPEActivity.query.filter_by(user_id=current_user.id)\
-                                        .options(db.joinedload(CPEActivity.certification)\
-                                                  .defer('created_at'))\
+                                        .options(db.joinedload(CPEActivity.certification))\
                                         .order_by(CPEActivity.created_at.desc())\
                                         .limit(3).all()
     
@@ -121,8 +118,7 @@ def dashboard():
 @login_required
 def certifications():
     """View all certifications - optimized"""
-    user_certifications = Certification.query.filter_by(user_id=current_user.id)\
-                                            .options(db.defer('created_at')).all()
+    user_certifications = Certification.query.filter_by(user_id=current_user.id).all()
     return render_template('certifications.html', certifications=user_certifications)
 
 @app.route('/certifications/add', methods=['GET', 'POST'])
@@ -197,11 +193,9 @@ def activities():
     page = request.args.get('page', 1, type=int)
     cert_filter = request.args.get('certification', type=int)
     
-    # Ultra-fast query with minimal columns
+    # Fast query with proper joins
     query = CPEActivity.query.filter_by(user_id=current_user.id)\
-                             .options(db.joinedload(CPEActivity.certification)\
-                                       .load_only('name', 'authority'),
-                                     db.defer('created_at'))
+                             .options(db.joinedload(CPEActivity.certification))
     
     if cert_filter:
         query = query.filter_by(certification_id=cert_filter)
@@ -209,11 +203,8 @@ def activities():
     user_activities = query.order_by(CPEActivity.activity_date.desc())\
                           .paginate(page=page, per_page=10, error_out=False)
     
-    # Minimal certification data for filter
-    certifications = Certification.query.filter_by(user_id=current_user.id)\
-                                       .with_entities(Certification.id, 
-                                                    Certification.name,
-                                                    Certification.authority).all()
+    # Get certifications for filter dropdown
+    certifications = Certification.query.filter_by(user_id=current_user.id).all()
     
     return render_template('activities.html', 
                          activities=user_activities,
