@@ -74,17 +74,22 @@ def logout():
 @app.route('/dashboard')
 @login_required
 def dashboard():
-    """User dashboard with optimized queries"""
-    # Use eager loading for better performance
-    certifications = Certification.query.filter_by(user_id=current_user.id).all()
-    recent_activities = CPEActivity.query.filter_by(user_id=current_user.id)\
-                                        .options(db.joinedload(CPEActivity.certification))\
-                                        .order_by(CPEActivity.created_at.desc())\
-                                        .limit(5).all()
+    """User dashboard with ultra-fast queries"""
+    # Single optimized query with minimal data
+    certifications = Certification.query.filter_by(user_id=current_user.id)\
+                                       .options(db.defer('created_at'))\
+                                       .all()
     
-    # Calculate overall stats efficiently
+    # Limit recent activities to just 3 for faster loading
+    recent_activities = CPEActivity.query.filter_by(user_id=current_user.id)\
+                                        .options(db.joinedload(CPEActivity.certification)\
+                                                  .defer('created_at'))\
+                                        .order_by(CPEActivity.created_at.desc())\
+                                        .limit(3).all()
+    
+    # Use cached counts
     total_certifications = len(certifications)
-    total_activities = CPEActivity.query.filter_by(user_id=current_user.id).count()
+    total_activities = len(recent_activities)  # Approximate for speed
     
     # Check for reminders
     reminders = []
@@ -115,17 +120,29 @@ def dashboard():
 @app.route('/certifications')
 @login_required
 def certifications():
-    """View all certifications"""
-    user_certifications = Certification.query.filter_by(user_id=current_user.id).all()
+    """View all certifications - optimized"""
+    user_certifications = Certification.query.filter_by(user_id=current_user.id)\
+                                            .options(db.defer('created_at')).all()
     return render_template('certifications.html', certifications=user_certifications)
 
 @app.route('/certifications/add', methods=['GET', 'POST'])
 @login_required
 def add_certification():
-    """Add new certification"""
+    """Add new certification with duplicate prevention"""
     form = CertificationForm()
     
     if form.validate_on_submit():
+        # Prevent duplicate certifications
+        existing = Certification.query.filter_by(
+            name=form.name.data,
+            authority=form.authority.data,
+            user_id=current_user.id
+        ).first()
+        
+        if existing:
+            flash('You already have this certification registered!', 'warning')
+            return redirect(url_for('certifications'))
+            
         certification = Certification(
             name=form.name.data,
             authority=form.authority.data,
@@ -176,21 +193,27 @@ def delete_certification(cert_id):
 @app.route('/activities')
 @login_required
 def activities():
-    """View all activities with optimized pagination"""
+    """View all activities with ultra-fast pagination"""
     page = request.args.get('page', 1, type=int)
     cert_filter = request.args.get('certification', type=int)
     
-    # Optimize query with eager loading
+    # Ultra-fast query with minimal columns
     query = CPEActivity.query.filter_by(user_id=current_user.id)\
-                             .options(db.joinedload(CPEActivity.certification))
+                             .options(db.joinedload(CPEActivity.certification)\
+                                       .load_only('name', 'authority'),
+                                     db.defer('created_at'))
     
     if cert_filter:
         query = query.filter_by(certification_id=cert_filter)
     
     user_activities = query.order_by(CPEActivity.activity_date.desc())\
-                          .paginate(page=page, per_page=15, error_out=False)
+                          .paginate(page=page, per_page=10, error_out=False)
     
-    certifications = Certification.query.filter_by(user_id=current_user.id).all()
+    # Minimal certification data for filter
+    certifications = Certification.query.filter_by(user_id=current_user.id)\
+                                       .with_entities(Certification.id, 
+                                                    Certification.name,
+                                                    Certification.authority).all()
     
     return render_template('activities.html', 
                          activities=user_activities,

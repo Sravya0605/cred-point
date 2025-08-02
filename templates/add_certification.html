@@ -76,7 +76,7 @@
                         <a href="{{ url_for('certifications') }}" class="btn btn-secondary me-md-2">
                             <i class="fas fa-times me-1"></i>Cancel
                         </a>
-                        <button type="submit" class="btn btn-primary">
+                        <button type="submit" class="btn btn-primary" data-original="{{ 'Update' if certification else 'Add' }} Certification">
                             <i class="fas fa-{{ 'save' if certification else 'plus' }} me-1"></i>
                             {{ 'Update' if certification else 'Add' }} Certification
                         </button>

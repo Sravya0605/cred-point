@@ -20,16 +20,19 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("SESSION_SECRET", "dev-secret-key-change-in-production")
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 
-# Configure the database with optimization
+# Configure the database with aggressive optimization
 app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get("DATABASE_URL", "sqlite:///cpe_platform.db")
 app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
     "pool_recycle": 300,
     "pool_pre_ping": True,
-    "pool_size": 10,
-    "max_overflow": 20,
-    "pool_timeout": 30,
+    "pool_size": 20,
+    "max_overflow": 40,
+    "pool_timeout": 10,
+    "echo": False,  # Disable SQL logging for performance
 }
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+app.config["SQLALCHEMY_RECORD_QUERIES"] = False
+app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 86400  # 1 day cache for static files
 
 # Configure file uploads
 app.config['UPLOAD_FOLDER'] = 'static/uploads'
@@ -65,10 +68,14 @@ def add_performance_headers(response):
         response.cache_control.no_store = True
         response.cache_control.must_revalidate = True
     
-    # Add security headers
+    # Add security and performance headers
     response.headers['X-Content-Type-Options'] = 'nosniff'
     response.headers['X-Frame-Options'] = 'DENY'
     response.headers['X-XSS-Protection'] = '1; mode=block'
+    
+    # Compression hint
+    if 'gzip' in request.headers.get('Accept-Encoding', ''):
+        response.headers['Vary'] = 'Accept-Encoding'
     
     return response
 
