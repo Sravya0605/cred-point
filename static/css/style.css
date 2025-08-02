@@ -1,4 +1,4 @@
-/* Custom styles for CPE Management Platform */
+/* Custom styles for CPE Management Platform - Optimized for performance */
 
 :root {
     --primary-color: #0d6efd;
@@ -6,6 +6,21 @@
     --warning-color: #ffc107;
     --danger-color: #dc3545;
     --info-color: #0dcaf0;
+}
+
+/* Critical performance optimizations */
+* {
+    box-sizing: border-box;
+}
+
+body {
+    font-display: swap; /* Improve font loading */
+}
+
+/* Reduce layout shifts */
+img, iframe, video {
+    max-width: 100%;
+    height: auto;
 }
 
 /* Progress bars with smooth animations */

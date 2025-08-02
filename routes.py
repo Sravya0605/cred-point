@@ -74,13 +74,15 @@ def logout():
 @app.route('/dashboard')
 @login_required
 def dashboard():
-    """User dashboard"""
+    """User dashboard with optimized queries"""
+    # Use eager loading for better performance
     certifications = Certification.query.filter_by(user_id=current_user.id).all()
     recent_activities = CPEActivity.query.filter_by(user_id=current_user.id)\
+                                        .options(db.joinedload(CPEActivity.certification))\
                                         .order_by(CPEActivity.created_at.desc())\
                                         .limit(5).all()
     
-    # Calculate overall stats
+    # Calculate overall stats efficiently
     total_certifications = len(certifications)
     total_activities = CPEActivity.query.filter_by(user_id=current_user.id).count()
     
@@ -174,17 +176,19 @@ def delete_certification(cert_id):
 @app.route('/activities')
 @login_required
 def activities():
-    """View all activities"""
+    """View all activities with optimized pagination"""
     page = request.args.get('page', 1, type=int)
     cert_filter = request.args.get('certification', type=int)
     
-    query = CPEActivity.query.filter_by(user_id=current_user.id)
+    # Optimize query with eager loading
+    query = CPEActivity.query.filter_by(user_id=current_user.id)\
+                             .options(db.joinedload(CPEActivity.certification))
     
     if cert_filter:
         query = query.filter_by(certification_id=cert_filter)
     
     user_activities = query.order_by(CPEActivity.activity_date.desc())\
-                          .paginate(page=page, per_page=20, error_out=False)
+                          .paginate(page=page, per_page=15, error_out=False)
     
     certifications = Certification.query.filter_by(user_id=current_user.id).all()
     

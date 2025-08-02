@@ -5,10 +5,10 @@ from sqlalchemy import func
 
 class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(64), unique=True, nullable=False)
-    email = db.Column(db.String(120), unique=True, nullable=False)
+    username = db.Column(db.String(64), unique=True, nullable=False, index=True)
+    email = db.Column(db.String(120), unique=True, nullable=False, index=True)
     password_hash = db.Column(db.String(256), nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
     
     # Relationships
     certifications = db.relationship('Certification', backref='user', lazy=True, cascade='all, delete-orphan')
@@ -32,8 +32,11 @@ class Certification(db.Model):
     @property
     def earned_cpes(self):
         """Calculate total CPEs earned for this certification"""
+        if hasattr(self, '_earned_cpes'):
+            return self._earned_cpes
         total = db.session.query(func.sum(CPEActivity.cpe_value)).filter_by(certification_id=self.id).scalar()
-        return total or 0
+        self._earned_cpes = total or 0
+        return self._earned_cpes
     
     @property
     def progress_percentage(self):
@@ -60,15 +63,15 @@ class Certification(db.Model):
 
 class CPEActivity(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    activity_type = db.Column(db.String(50), nullable=False)  # Training, Conference, Webinar, etc.
+    activity_type = db.Column(db.String(50), nullable=False, index=True)  # Training, Conference, Webinar, etc.
     description = db.Column(db.Text, nullable=False)
-    cpe_value = db.Column(db.Float, nullable=False)
-    activity_date = db.Column(db.Date, nullable=False)
+    cpe_value = db.Column(db.Float, nullable=False, index=True)
+    activity_date = db.Column(db.Date, nullable=False, index=True)
     proof_file = db.Column(db.String(255))  # Path to uploaded proof file
     original_filename = db.Column(db.String(255))  # Original filename for display
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    certification_id = db.Column(db.Integer, db.ForeignKey('certification.id'), nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+    certification_id = db.Column(db.Integer, db.ForeignKey('certification.id'), nullable=False, index=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
     
     def __repr__(self):
         return f'<CPEActivity {self.description[:50]}>'
