@@ -111,13 +111,20 @@
                     </div>
                     
                     <div class="card-footer bg-transparent">
-                        <div class="d-flex justify-content-between">
+                        <div class="d-flex justify-content-between align-items-center">
                             <small class="text-muted">
                                 {{ cert.activities|length }} activities logged
                             </small>
-                            <a href="{{ url_for('activities', certification=cert.id) }}" class="btn btn-sm btn-outline-primary">
-                                View Activities <i class="fas fa-arrow-right ms-1"></i>
-                            </a>
+                            <div class="btn-group" role="group">
+                                <a href="{{ url_for('recommendations_page', cert_id=cert.id) }}" 
+                                   class="btn btn-sm btn-outline-warning">
+                                    <i class="fas fa-lightbulb me-1"></i>Get Ideas
+                                </a>
+                                <a href="{{ url_for('activities', certification=cert.id) }}" 
+                                   class="btn btn-sm btn-outline-primary">
+                                    View Activities <i class="fas fa-arrow-right ms-1"></i>
+                                </a>
+                            </div>
                         </div>
                     </div>
                 </div>

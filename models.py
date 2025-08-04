@@ -73,5 +73,11 @@ class CPEActivity(db.Model):
     certification_id = db.Column(db.Integer, db.ForeignKey('certification.id'), nullable=False, index=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
     
+    # Verification fields
+    verified = db.Column(db.Boolean, default=False, index=True)
+    verification_method = db.Column(db.String(100))  # manual, authority_rules, provider_recognition, etc.
+    verification_notes = db.Column(db.Text)
+    verification_date = db.Column(db.DateTime)
+    
     def __repr__(self):
         return f'<CPEActivity {self.description[:50]}>'

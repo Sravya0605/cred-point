@@ -1,11 +1,15 @@
 import os
-from flask import render_template, request, redirect, url_for, flash, send_file, make_response
+import json
+from flask import render_template, request, redirect, url_for, flash, send_file, make_response, jsonify
 from flask_login import login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
 from app import app, db
 from models import User, Certification, CPEActivity
 from forms import LoginForm, RegisterForm, CertificationForm, CPEActivityForm
 from utils import save_uploaded_file, generate_csv_report, generate_pdf_report
+from recommendation_engine import recommendation_engine
+from verification_engine import verification_engine
+from pdf_generator import pdf_generator
 from datetime import datetime, date
 
 @app.route('/')
@@ -121,6 +125,42 @@ def certifications():
     user_certifications = Certification.query.filter_by(user_id=current_user.id).all()
     return render_template('certifications.html', certifications=user_certifications)
 
+@app.route('/certifications/<int:cert_id>/recommendations')
+@login_required
+def get_recommendations(cert_id):
+    """Get real-world recommendations for a certification"""
+    certification = Certification.query.filter_by(id=cert_id, user_id=current_user.id).first_or_404()
+    
+    try:
+        recommendations = recommendation_engine.get_recommendations(
+            certification.name, 
+            certification.authority
+        )
+        return jsonify({
+            'success': True,
+            'recommendations': recommendations
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/certifications/<int:cert_id>/recommendations-page')
+@login_required
+def recommendations_page(cert_id):
+    """Display recommendations page for a certification"""
+    certification = Certification.query.filter_by(id=cert_id, user_id=current_user.id).first_or_404()
+    
+    recommendations = recommendation_engine.get_recommendations(
+        certification.name, 
+        certification.authority
+    )
+    
+    return render_template('recommendations.html', 
+                         certification=certification, 
+                         recommendations=recommendations)
+
 @app.route('/certifications/add', methods=['GET', 'POST'])
 @login_required
 def add_certification():
@@ -214,18 +254,37 @@ def activities():
 @app.route('/activities/add', methods=['GET', 'POST'])
 @login_required
 def add_activity():
-    """Add new CPE activity"""
+    """Add new CPE activity with intelligent verification"""
     form = CPEActivityForm()
     
     # Populate certification choices
     certifications = Certification.query.filter_by(user_id=current_user.id).all()
     form.certification_id.choices = [(cert.id, f"{cert.name} ({cert.authority})") for cert in certifications]
     
+    # Handle URL parameters for pre-filling from recommendations
+    if request.method == 'GET':
+        prefill_description = request.args.get('prefill_description')
+        prefill_type = request.args.get('prefill_type')
+        prefill_cpe = request.args.get('prefill_cpe')
+        prefill_cert = request.args.get('prefill_cert')
+        
+        if prefill_description:
+            form.description.data = prefill_description
+        if prefill_type:
+            form.activity_type.data = prefill_type
+        if prefill_cpe:
+            form.cpe_value.data = float(prefill_cpe)
+        if prefill_cert:
+            form.certification_id.data = int(prefill_cert)
+    
     if not certifications:
         flash('You need to add at least one certification before logging activities.', 'warning')
         return redirect(url_for('add_certification'))
     
     if form.validate_on_submit():
+        # Get certification for verification
+        certification = Certification.query.get(form.certification_id.data)
+        
         # Handle file upload
         proof_filename = None
         original_filename = None
@@ -233,21 +292,47 @@ def add_activity():
         if form.proof_file.data:
             proof_filename, original_filename = save_uploaded_file(form.proof_file.data)
         
+        # Prepare activity data for verification
+        activity_data = {
+            'description': form.description.data,
+            'activity_type': form.activity_type.data,
+            'cpe_value': float(form.cpe_value.data),
+            'authority': certification.authority,
+            'proof_file': proof_filename
+        }
+        
+        # Verify the activity
+        verification_result = verification_engine.verify_activity(activity_data)
+        
         activity = CPEActivity(
             activity_type=form.activity_type.data,
             description=form.description.data,
-            cpe_value=form.cpe_value.data,
+            cpe_value=verification_result.get('suggested_cpe_value', form.cpe_value.data),
             activity_date=form.activity_date.data,
             certification_id=form.certification_id.data,
             proof_file=proof_filename,
             original_filename=original_filename,
-            user_id=current_user.id
+            user_id=current_user.id,
+            verified=verification_result.get('verified', False),
+            verification_method=verification_result.get('verification_method', 'manual'),
+            verification_notes=verification_result.get('verification_notes', ''),
+            verification_date=datetime.utcnow() if verification_result.get('verified') else None
         )
         
         db.session.add(activity)
         db.session.commit()
         
-        flash('CPE activity added successfully!', 'success')
+        # Show verification feedback
+        if verification_result.get('verified'):
+            flash(f'CPE activity verified and logged! {verification_result.get("verification_notes", "")}', 'success')
+        else:
+            flash(f'CPE activity logged. {verification_result.get("verification_notes", "Manual verification required.")}', 'info')
+        
+        # Suggest adjusted CPE value if different
+        suggested_value = verification_result.get('suggested_cpe_value', form.cpe_value.data)
+        if abs(suggested_value - float(form.cpe_value.data)) > 0.1:
+            flash(f'CPE value adjusted to {suggested_value} based on {certification.authority} guidelines', 'info')
+        
         return redirect(url_for('activities'))
     
     return render_template('add_activity.html', form=form)
@@ -276,10 +361,99 @@ def uploaded_file(filename):
     """Serve uploaded files"""
     return send_file(os.path.join(app.config['UPLOAD_FOLDER'], filename))
 
+@app.route('/activities/<int:activity_id>/export-pdf')
+@login_required
+def export_single_activity_pdf(activity_id):
+    """Export single activity as professional PDF report"""
+    activity = CPEActivity.query.filter_by(id=activity_id, user_id=current_user.id).first_or_404()
+    certification = activity.certification
+    
+    # Prepare activity data
+    activity_data = {
+        'activity_type': activity.activity_type,
+        'description': activity.description,
+        'cpe_value': activity.cpe_value,
+        'activity_date': activity.activity_date,
+        'proof_file': activity.proof_file,
+        'original_filename': activity.original_filename
+    }
+    
+    # Prepare certification data
+    certification_data = {
+        'name': certification.name,
+        'authority': certification.authority,
+        'required_cpes': certification.required_cpes,
+        'renewal_date': certification.renewal_date,
+        'earned_cpes': certification.earned_cpes
+    }
+    
+    # Prepare verification data
+    verification_data = {
+        'verified': activity.verified,
+        'verification_method': activity.verification_method,
+        'verification_notes': activity.verification_notes
+    }
+    
+    # Generate PDF
+    pdf_data = pdf_generator.generate_single_activity_report(
+        activity_data, certification_data, verification_data
+    )
+    
+    response = make_response(pdf_data)
+    response.headers['Content-Type'] = 'application/pdf'
+    response.headers['Content-Disposition'] = f'attachment; filename=CPE_Activity_{activity.id}_{activity.activity_date.strftime("%Y%m%d")}.pdf'
+    
+    return response
+
+@app.route('/certifications/<int:cert_id>/export-comprehensive-pdf')
+@login_required
+def export_comprehensive_pdf(cert_id):
+    """Export comprehensive certification report as PDF"""
+    certification = Certification.query.filter_by(id=cert_id, user_id=current_user.id).first_or_404()
+    activities = CPEActivity.query.filter_by(certification_id=cert_id)\
+                                 .order_by(CPEActivity.activity_date.desc()).all()
+    
+    # Prepare activities data
+    activities_data = []
+    for activity in activities:
+        activities_data.append({
+            'activity_type': activity.activity_type,
+            'description': activity.description,
+            'cpe_value': activity.cpe_value,
+            'activity_date': activity.activity_date,
+            'verified': activity.verified
+        })
+    
+    # Prepare certification data
+    certification_data = {
+        'name': certification.name,
+        'authority': certification.authority,
+        'required_cpes': certification.required_cpes,
+        'renewal_date': certification.renewal_date,
+        'earned_cpes': certification.earned_cpes
+    }
+    
+    # Prepare user data
+    user_data = {
+        'username': current_user.username,
+        'email': current_user.email
+    }
+    
+    # Generate PDF
+    pdf_data = pdf_generator.generate_comprehensive_report(
+        activities_data, certification_data, user_data
+    )
+    
+    response = make_response(pdf_data)
+    response.headers['Content-Type'] = 'application/pdf'
+    response.headers['Content-Disposition'] = f'attachment; filename=CPE_Report_{certification.name.replace(" ", "_")}_{datetime.now().strftime("%Y%m%d")}.pdf'
+    
+    return response
+
 @app.route('/certifications/<int:cert_id>/export/<format>')
 @login_required
 def export_certification(cert_id, format):
-    """Export certification report"""
+    """Export certification report (legacy endpoint)"""
     certification = Certification.query.filter_by(id=cert_id, user_id=current_user.id).first_or_404()
     activities = CPEActivity.query.filter_by(certification_id=cert_id)\
                                  .order_by(CPEActivity.activity_date.desc()).all()
