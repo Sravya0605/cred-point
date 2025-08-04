@@ -284,6 +284,9 @@ def add_activity():
     if form.validate_on_submit():
         # Get certification for verification
         certification = Certification.query.get(form.certification_id.data)
+        if not certification:
+            flash('Invalid certification selected.', 'error')
+            return redirect(url_for('add_activity'))
         
         # Handle file upload
         proof_filename = None
@@ -296,7 +299,7 @@ def add_activity():
         activity_data = {
             'description': form.description.data,
             'activity_type': form.activity_type.data,
-            'cpe_value': float(form.cpe_value.data),
+            'cpe_value': float(form.cpe_value.data or 0),
             'authority': certification.authority,
             'proof_file': proof_filename
         }
@@ -307,7 +310,7 @@ def add_activity():
         activity = CPEActivity(
             activity_type=form.activity_type.data,
             description=form.description.data,
-            cpe_value=verification_result.get('suggested_cpe_value', form.cpe_value.data),
+            cpe_value=verification_result.get('suggested_cpe_value', float(form.cpe_value.data or 0)),
             activity_date=form.activity_date.data,
             certification_id=form.certification_id.data,
             proof_file=proof_filename,
@@ -329,8 +332,9 @@ def add_activity():
             flash(f'CPE activity logged. {verification_result.get("verification_notes", "Manual verification required.")}', 'info')
         
         # Suggest adjusted CPE value if different
-        suggested_value = verification_result.get('suggested_cpe_value', form.cpe_value.data)
-        if abs(suggested_value - float(form.cpe_value.data)) > 0.1:
+        suggested_value = verification_result.get('suggested_cpe_value', float(form.cpe_value.data or 0))
+        original_value = float(form.cpe_value.data or 0)
+        if abs(suggested_value - original_value) > 0.1:
             flash(f'CPE value adjusted to {suggested_value} based on {certification.authority} guidelines', 'info')
         
         return redirect(url_for('activities'))

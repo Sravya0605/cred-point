@@ -1,223 +1,223 @@
 """
-Real-world recommendation engine for CPE activities
-Fetches live recommendations based on certification type
+Recommendation Engine for CPE Management Platform
+Fetches real-world CPE opportunities from certification authorities
 """
 
 import requests
 import trafilatura
 from bs4 import BeautifulSoup
-from datetime import datetime, timedelta
 import logging
-from typing import List, Dict, Any
+from typing import List, Dict, Optional
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 class CPERecommendationEngine:
-    """Engine to fetch real-world CPE recommendations"""
+    """Engine for fetching real-world CPE opportunities"""
     
     def __init__(self):
+        self.authority_urls = {
+            'ISC²': [
+                'https://www.isc2.org/Development/CPE-Credits',
+                'https://www.isc2.org/Training'
+            ],
+            'EC-Council': [
+                'https://www.eccouncil.org/continuing-education/',
+                'https://www.eccouncil.org/programs/'
+            ],
+            'CompTIA': [
+                'https://www.comptia.org/continuing-education',
+                'https://www.comptia.org/training'
+            ],
+            'OffSec': [
+                'https://www.offensive-security.com/courses/',
+                'https://www.offensive-security.com/training/'
+            ]
+        }
+        
         self.session = requests.Session()
         self.session.headers.update({
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            'User-Agent': 'Mozilla/5.0 (compatible; CPE-Bot/1.0; Education)'
         })
-    
-    def get_recommendations(self, certification_name: str, authority: str) -> List[Dict[str, Any]]:
-        """Get real-world recommendations for a certification"""
+
+    def get_recommendations(self, certification_name: str, authority: str) -> List[Dict]:
+        """
+        Fetch real-world CPE recommendations for a specific certification
+        
+        Args:
+            certification_name: Name of the certification (e.g., "CISSP")
+            authority: Certification authority (e.g., "ISC²")
+            
+        Returns:
+            List of recommendation dictionaries with title, description, type, source, url, cpe_value
+        """
+        logger.info(f"Fetching recommendations for {certification_name} from {authority}")
+        
         recommendations = []
         
         try:
-            if authority.upper() == 'ISC²':
-                recommendations.extend(self._get_isc2_recommendations())
-            elif authority.upper() == 'EC-COUNCIL':
-                recommendations.extend(self._get_eccouncil_recommendations())
-            elif authority.upper() == 'COMPTIA':
-                recommendations.extend(self._get_comptia_recommendations())
-            elif authority.upper() == 'OFFENSIVE SECURITY':
-                recommendations.extend(self._get_offsec_recommendations())
+            # Get URLs for the specific authority
+            urls = self.authority_urls.get(authority, [])
             
-            # Add general cybersecurity recommendations
-            recommendations.extend(self._get_general_security_recommendations())
+            for url in urls:
+                try:
+                    recs = self._fetch_from_url(url, authority)
+                    recommendations.extend(recs)
+                except Exception as e:
+                    logger.warning(f"Failed to fetch from {url}: {str(e)}")
+                    continue
             
+            # Add some general cybersecurity training recommendations if no specific ones found
+            if not recommendations:
+                recommendations = self._get_fallback_recommendations(authority)
+                
         except Exception as e:
-            logging.error(f"Error fetching recommendations: {e}")
-            # Return fallback recommendations
-            recommendations = self._get_fallback_recommendations()
+            logger.error(f"Error fetching recommendations: {str(e)}")
+            recommendations = self._get_fallback_recommendations(authority)
         
-        return recommendations[:10]  # Limit to 10 recommendations
-    
-    def _get_isc2_recommendations(self) -> List[Dict[str, Any]]:
-        """Fetch ISC² specific recommendations"""
+        # Limit to 6 recommendations for better UX
+        return recommendations[:6]
+
+    def _fetch_from_url(self, url: str, authority: str) -> List[Dict]:
+        """Fetch recommendations from a specific URL"""
         recommendations = []
         
         try:
-            # ISC² CPE Portal
-            url = "https://www.isc2.org/Professional-Development/CPE"
             response = self.session.get(url, timeout=10)
+            response.raise_for_status()
             
-            if response.status_code == 200:
-                soup = BeautifulSoup(response.content, 'html.parser')
+            # Extract text content using trafilatura
+            text_content = trafilatura.extract(response.text)
+            if not text_content:
+                return recommendations
+            
+            # Parse HTML for structured data
+            soup = BeautifulSoup(response.text, 'html.parser')
+            
+            # Look for training/course links and titles
+            course_links = soup.find_all('a', href=True)
+            
+            for link in course_links[:10]:  # Limit to first 10 links
+                href = link.get('href', '')
+                text = link.get_text(strip=True)
                 
-                # Look for webinars and events
-                events = soup.find_all(['a', 'div'], class_=lambda x: x and ('event' in x.lower() or 'webinar' in x.lower()))
-                
-                for event in events[:5]:
-                    title_elem = event.find(['h1', 'h2', 'h3', 'h4']) or event
-                    title = title_elem.get_text(strip=True) if title_elem else "ISC² Professional Development"
+                # Skip if not relevant
+                if not self._is_training_related(text, href):
+                    continue
                     
-                    if len(title) > 10:  # Filter out empty or very short titles
-                        recommendations.append({
-                            'title': title[:100],
-                            'type': 'Webinar',
-                            'source': 'ISC²',
-                            'cpe_value': 1.0,
-                            'url': response.url,
-                            'description': 'Official ISC² professional development activity'
-                        })
+                # Build full URL if relative
+                if href.startswith('/'):
+                    href = url.rsplit('/', 2)[0] + href
+                elif not href.startswith('http'):
+                    continue
+                
+                # Create recommendation
+                rec = self._create_recommendation(text, href, authority)
+                if rec:
+                    recommendations.append(rec)
+                    
         except Exception as e:
-            logging.error(f"Error fetching ISC² recommendations: {e}")
-        
+            logger.warning(f"Error processing {url}: {str(e)}")
+            
         return recommendations
-    
-    def _get_eccouncil_recommendations(self) -> List[Dict[str, Any]]:
-        """Fetch EC-Council specific recommendations"""
-        recommendations = []
+
+    def _is_training_related(self, text: str, href: str) -> bool:
+        """Check if link is training/CPE related"""
+        training_keywords = [
+            'training', 'course', 'certification', 'workshop', 'webinar',
+            'seminar', 'conference', 'education', 'learning', 'cpe'
+        ]
         
-        try:
-            # EC-Council CPE activities
-            recommendations.append({
-                'title': 'EC-Council Cyber Aces Training',
-                'type': 'Online Training',
-                'source': 'EC-Council',
-                'cpe_value': 40.0,
-                'url': 'https://cyberaces.org',
-                'description': 'Interactive cybersecurity training modules'
-            })
+        text_lower = text.lower()
+        href_lower = href.lower()
+        
+        return (
+            any(keyword in text_lower for keyword in training_keywords) or
+            any(keyword in href_lower for keyword in training_keywords)
+        ) and len(text) > 5
+
+    def _create_recommendation(self, title: str, url: str, authority: str) -> Optional[Dict]:
+        """Create a recommendation dictionary"""
+        if len(title) < 5 or len(title) > 100:
+            return None
             
-            recommendations.append({
-                'title': 'EC-Council Security Events',
-                'type': 'Conference',
-                'source': 'EC-Council',
-                'cpe_value': 8.0,
-                'url': 'https://www.eccouncil.org/events/',
-                'description': 'Professional cybersecurity conferences and workshops'
-            })
-            
-        except Exception as e:
-            logging.error(f"Error fetching EC-Council recommendations: {e}")
+        # Determine CPE value based on title keywords
+        cpe_value = self._estimate_cpe_value(title)
         
-        return recommendations
-    
-    def _get_comptia_recommendations(self) -> List[Dict[str, Any]]:
-        """Fetch CompTIA specific recommendations"""
-        recommendations = []
+        # Determine activity type
+        activity_type = self._determine_activity_type(title)
         
-        try:
-            recommendations.append({
-                'title': 'CompTIA Security+ Study Groups',
-                'type': 'Study Group',
-                'source': 'CompTIA',
-                'cpe_value': 2.0,
-                'url': 'https://www.comptia.org/continuing-education',
-                'description': 'Community-led study sessions and workshops'
-            })
-            
-            recommendations.append({
-                'title': 'CompTIA IT Fundamentals Webinars',
-                'type': 'Webinar',
-                'source': 'CompTIA',
-                'cpe_value': 1.0,
-                'url': 'https://www.comptia.org/training/webinars',
-                'description': 'Regular webinars on emerging IT topics'
-            })
-            
-        except Exception as e:
-            logging.error(f"Error fetching CompTIA recommendations: {e}")
+        return {
+            'title': title,
+            'description': f"Professional development opportunity from {authority}",
+            'type': activity_type,
+            'source': authority,
+            'url': url,
+            'cpe_value': cpe_value
+        }
+
+    def _estimate_cpe_value(self, title: str) -> float:
+        """Estimate CPE value based on activity title"""
+        title_lower = title.lower()
         
-        return recommendations
-    
-    def _get_offsec_recommendations(self) -> List[Dict[str, Any]]:
-        """Fetch Offensive Security recommendations"""
-        recommendations = []
+        if 'conference' in title_lower or 'summit' in title_lower:
+            return 8.0
+        elif 'workshop' in title_lower or 'bootcamp' in title_lower:
+            return 4.0
+        elif 'webinar' in title_lower:
+            return 1.0
+        elif 'course' in title_lower or 'training' in title_lower:
+            return 2.0
+        else:
+            return 1.0
+
+    def _determine_activity_type(self, title: str) -> str:
+        """Determine activity type from title"""
+        title_lower = title.lower()
         
-        try:
-            recommendations.append({
-                'title': 'OffSec Live Training Events',
+        if 'conference' in title_lower:
+            return 'Conference'
+        elif 'webinar' in title_lower:
+            return 'Webinar'
+        elif 'workshop' in title_lower:
+            return 'Workshop'
+        elif 'course' in title_lower:
+            return 'Training'
+        else:
+            return 'Education'
+
+    def _get_fallback_recommendations(self, authority: str) -> List[Dict]:
+        """Provide fallback recommendations when live data unavailable"""
+        
+        base_recommendations = [
+            {
+                'title': f'{authority} Official Training Program',
+                'description': f'Explore official training programs and courses from {authority}',
                 'type': 'Training',
-                'source': 'Offensive Security',
-                'cpe_value': 8.0,
-                'url': 'https://www.offensive-security.com/courses/',
-                'description': 'Hands-on penetration testing training'
-            })
-            
-            recommendations.append({
-                'title': 'OSCP Practice Labs',
-                'type': 'Self-Study',
-                'source': 'Offensive Security',
-                'cpe_value': 4.0,
-                'url': 'https://www.offensive-security.com/labs/',
-                'description': 'Practical penetration testing exercises'
-            })
-            
-        except Exception as e:
-            logging.error(f"Error fetching OffSec recommendations: {e}")
+                'source': authority,
+                'url': self.authority_urls.get(authority, ['#'])[0],
+                'cpe_value': 4.0
+            },
+            {
+                'title': 'Cybersecurity Webinar Series',
+                'description': 'Regular webinars covering current cybersecurity topics and trends',
+                'type': 'Webinar',
+                'source': authority,
+                'url': self.authority_urls.get(authority, ['#'])[0],
+                'cpe_value': 1.0
+            },
+            {
+                'title': 'Industry Security Conference',
+                'description': 'Annual cybersecurity conference with expert presentations',
+                'type': 'Conference',
+                'source': authority,
+                'url': self.authority_urls.get(authority, ['#'])[0],
+                'cpe_value': 8.0
+            }
+        ]
         
-        return recommendations
-    
-    def _get_general_security_recommendations(self) -> List[Dict[str, Any]]:
-        """Get general cybersecurity recommendations"""
-        return [
-            {
-                'title': 'SANS Security Training',
-                'type': 'Training Course',
-                'source': 'SANS',
-                'cpe_value': 32.0,
-                'url': 'https://www.sans.org/cyber-security-courses/',
-                'description': 'Industry-leading cybersecurity training courses'
-            },
-            {
-                'title': 'NIST Cybersecurity Framework Webinars',
-                'type': 'Webinar',
-                'source': 'NIST',
-                'cpe_value': 1.0,
-                'url': 'https://www.nist.gov/cyberframework',
-                'description': 'Government cybersecurity framework training'
-            },
-            {
-                'title': 'ISACA Cybersecurity Nexus',
-                'type': 'Conference',
-                'source': 'ISACA',
-                'cpe_value': 8.0,
-                'url': 'https://www.isaca.org/training-and-events',
-                'description': 'Professional governance and risk management'
-            },
-            {
-                'title': 'DEF CON Security Conference',
-                'type': 'Conference',
-                'source': 'DEF CON',
-                'cpe_value': 16.0,
-                'url': 'https://defcon.org',
-                'description': 'Premier hacker convention with cutting-edge security research'
-            }
-        ]
-    
-    def _get_fallback_recommendations(self) -> List[Dict[str, Any]]:
-        """Fallback recommendations when web scraping fails"""
-        return [
-            {
-                'title': 'Cybersecurity Professional Development',
-                'type': 'Self-Study',
-                'source': 'General',
-                'cpe_value': 1.0,
-                'url': 'https://www.cybersecurityeducation.org',
-                'description': 'Comprehensive cybersecurity learning resources'
-            },
-            {
-                'title': 'Industry Security Webinars',
-                'type': 'Webinar',
-                'source': 'General',
-                'cpe_value': 1.0,
-                'url': 'https://www.securityweek.com/events/',
-                'description': 'Weekly cybersecurity industry updates and training'
-            }
-        ]
+        return base_recommendations
 
 # Global instance
 recommendation_engine = CPERecommendationEngine()
