@@ -4,6 +4,12 @@ A web application built with Flask and Firebase/Firestore to help cybersecurity 
 
 ---
 
+## Collaboration Note:
+This is a collaborative project built by Jaladi Sravya (https://github.com/Sravya0605) and Maddilavan Indraneeli Vardhan (https://github.com/Vardhan0257).  
+Main repo: [https://github.com/Sravya0605/cred-point](https://github.com/Sravya0605/cred-point)
+
+---
+
 ## Features
 
 - **Event Submission:** Users can enter event details, upload proof of attendance, and specify the CPE credits awarded.
@@ -84,28 +90,28 @@ A web application built with Flask and Firebase/Firestore to help cybersecurity 
 ## Screenshots
 
 **Dashboard**  
-![Dashboard](screenshots/dashboard.png)
+![Dashboard](screenShots/dashboard.png)
 
 **Certifications Page**  
-![Certifications](screenshots/certifications.png)
+![Certifications](screenShots/certifications.png)
 
 **Add Certifications**  
-![Add Certifications](screenshots/add_certification.png)
+![Add Certifications](screenShots/add_certification.png)
 
 **Recommendations**  
-![Recommendations](screenshots/recommendations.png)
+![Recommendations](screenShots/recommendations.png)
 
 **Add Recommendations**  
-![Add Recommendations](screenshots/add_recommendations.png)
+![Add Recommendations](screenShots/add_recommendations.png)
 
 **My Recommendations**  
-![My Recommendations Page](screenshots/my_recommendations_page.png)
+![My Recommendations Page](screenShots/my_recommendations_page.png)
 
 **Add Activities**  
-![Add Activities](screenshots/add_activities.png)
+![Add Activities](screenShots/add_activities.png)
 
 **Newsletter**  
-![Newsletter](screenshots/newsletter.png)
+![Newsletter](screenShots/newsletter.png)
 
 ---
 
