@@ -5,7 +5,7 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h1><i class="fas fa-certificate text-primary me-2"></i>My Certifications</h1>
-    <a href="{{ url_for('add_certification') }}" class="btn btn-primary">
+    <a href="{{ url_for('routes.add_certification') }}" class="btn btn-primary">
         <i class="fas fa-plus me-1"></i>Add Certification
     </a>
 </div>
@@ -26,24 +26,25 @@
                             </button>
                             <ul class="dropdown-menu">
                                 <li>
-                                    <a class="dropdown-item" href="{{ url_for('edit_certification', cert_id=cert.id) }}">
+                                    <a class="dropdown-item" href="{{ url_for('routes.edit_certification', cert_id=cert.id) }}">
                                         <i class="fas fa-edit me-2"></i>Edit
                                     </a>
                                 </li>
                                 <li><hr class="dropdown-divider"></li>
                                 <li>
-                                    <a class="dropdown-item" href="{{ url_for('export_certification', cert_id=cert.id, format='pdf') }}">
-                                        <i class="fas fa-file-pdf me-2"></i>Export PDF
+                                    <a class="dropdown-item" href="{{ url_for('routes.select_activities_for_export', cert_id=cert.id) }}">
+                                        <i class="fas fa-file-pdf me-2"></i>Export PDF (Select Activities)
                                     </a>
                                 </li>
+
                                 <li>
-                                    <a class="dropdown-item" href="{{ url_for('export_certification', cert_id=cert.id, format='csv') }}">
+                                    <a class="dropdown-item" href="{{ url_for('routes.export_certification', cert_id=cert.id, format='csv') }}">
                                         <i class="fas fa-file-csv me-2"></i>Export CSV
                                     </a>
                                 </li>
                                 <li><hr class="dropdown-divider"></li>
                                 <li>
-                                    <form method="POST" action="{{ url_for('delete_certification', cert_id=cert.id) }}" class="d-inline" 
+                                    <form method="POST" action="{{ url_for('routes.delete_certification', cert_id=cert.id) }}" class="d-inline" 
                                           onsubmit="return confirm('Are you sure you want to delete this certification? All associated activities will also be deleted.')">
                                         <button type="submit" class="dropdown-item text-danger">
                                             <i class="fas fa-trash me-2"></i>Delete
@@ -92,10 +93,16 @@
                                 </div>
                             </div>
                             <div class="col-4">
-                                <h6 class="text-{{ 'success' if cert.required_cpes - cert.earned_cpes <= 0 else 'warning' }} mb-1">
-                                    {{ max(0, cert.required_cpes - cert.earned_cpes) }}
+                                {% set remaining = cert.required_cpes - cert.earned_cpes %}
+                                <h6 class="text-{{ 'success' if remaining <= 0 else 'warning' }} mb-1">
+                                    {% if remaining > 0 %}
+                                    {{ remaining }}
+                                    {% else %}
+                                        0
+                                    {% endif %}
                                 </h6>
                                 <small class="text-muted">Remaining</small>
+
                             </div>
                         </div>
                         
@@ -104,7 +111,8 @@
                             <div class="text-center">
                                 <small class="text-muted">
                                     <i class="fas fa-calendar me-1"></i>
-                                    Renewal: {{ cert.renewal_date.strftime('%B %d, %Y') }}
+                                    Renewal: {{ cert.renewal_date }}
+
                                 </small>
                             </div>
                         {% endif %}
@@ -116,13 +124,12 @@
                                 {{ cert.activities|length }} activities logged
                             </small>
                             <div class="btn-group" role="group">
-                                <a href="{{ url_for('recommendations_page', cert_id=cert.id) }}" 
+                                <a href="{{ url_for('routes.recommendations_page', cert_id=cert.id) }}" 
                                    class="btn btn-sm btn-outline-warning">
                                     <i class="fas fa-lightbulb me-1"></i>Get Ideas
                                 </a>
-                                <a href="{{ url_for('activities', certification=cert.id) }}" 
-                                   class="btn btn-sm btn-outline-primary">
-                                    View Activities <i class="fas fa-arrow-right ms-1"></i>
+                                <a href="{{ url_for('routes.add_activity', prefill_cert=cert.id) }}" class="btn btn-sm btn-primary">
+                                    Log Activity
                                 </a>
                             </div>
                         </div>
@@ -136,7 +143,7 @@
         <i class="fas fa-certificate fa-4x text-muted mb-4"></i>
         <h3 class="text-muted mb-3">No Certifications Added</h3>
         <p class="text-muted mb-4">Start tracking your continuing professional education by adding your first certification.</p>
-        <a href="{{ url_for('add_certification') }}" class="btn btn-primary btn-lg">
+        <a href="{{ url_for('routes.add_certification') }}" class="btn btn-primary btn-lg">
             <i class="fas fa-plus me-2"></i>Add Your First Certification
         </a>
     </div>

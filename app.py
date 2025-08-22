@@ -1,91 +1,70 @@
+from flask import Flask, request, jsonify, g, render_template, session, redirect, url_for
+from firebase_admin import auth  # Only use 'auth', no need to initialize Firebase here
 import os
-import logging
-from flask import Flask, make_response, request
-from flask_sqlalchemy import SQLAlchemy
-from flask_login import LoginManager
-from sqlalchemy.orm import DeclarativeBase
-from werkzeug.middleware.proxy_fix import ProxyFix
 
-
-# Configure logging
-logging.basicConfig(level=logging.DEBUG)
-
-class Base(DeclarativeBase):
-    pass
-
-db = SQLAlchemy(model_class=Base)
-
-# Create the app
 app = Flask(__name__)
-app.secret_key = os.environ.get("SESSION_SECRET", "dev-secret-key-change-in-production")
-app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
+app.config['SECRET_KEY'] = os.environ.get('FLASK_SECRET_KEY', 'dev-secret-key')
+app.config['UPLOAD_FOLDER'] = os.path.join(os.path.dirname(__file__), 'uploads')
 
-# Configure the database with aggressive optimization
-app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get("DATABASE_URL", "sqlite:///cpe_platform.db")
-app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
-    "pool_recycle": 300,
-    "pool_pre_ping": True,
-    "pool_size": 20,
-    "max_overflow": 40,
-    "pool_timeout": 10,
-    "echo": False,  # Disable SQL logging for performance
-}
-app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-app.config["SQLALCHEMY_RECORD_QUERIES"] = False
-app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 86400  # 1 day cache for static files
+# =====================
+# Session Login Endpoint
+# =====================
+@app.route('/session-login', methods=['POST'])
+def session_login():
+    data = request.get_json()
+    id_token = data.get('idToken')
+    if not id_token:
+        return jsonify({'error': 'ID token missing'}), 400
+    try:
+        decoded_token = auth.verify_id_token(id_token)
+        session['firebase_id_token'] = id_token
+        session['uid'] = decoded_token['uid']
+        return jsonify({'message': 'Login successful'}), 200
+    except Exception as e:
+        return jsonify({'error': f'Invalid token: {str(e)}'}), 401
 
-# Configure file uploads
-app.config['UPLOAD_FOLDER'] = 'static/uploads'
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
+# =====================
+# Middleware: Verify Firebase ID Token (only for protected routes)
+# =====================
+@app.before_request
+def verify_token():
+    public_endpoints = [
+        'routes.index',
+        'routes.login_page',
+        'routes.register_page',
+        'session_login',
+        'static'
+    ]
+    if request.endpoint in public_endpoints or request.endpoint is None:
+        return
 
-# Initialize extensions
-db.init_app(app)
-login_manager = LoginManager()
-login_manager.init_app(app)
-login_manager.login_view = 'login'
-login_manager.login_message = 'Please log in to access this page.'
-login_manager.login_message_category = 'info'
+    id_token = session.get('firebase_id_token')
+    if not id_token:
+        return redirect(url_for('routes.login_page'))
 
-@login_manager.user_loader
-def load_user(user_id):
-    from models import User
-    return User.query.get(int(user_id))
+    try:
+        decoded_token = auth.verify_id_token(id_token)
+        g.uid = decoded_token['uid']
+    except Exception:
+        session.clear()
+        return redirect(url_for('routes.login_page'))
 
-# Add max function to Jinja2 globals for template use
-app.jinja_env.globals.update(max=max, min=min, len=len)
+# =====================
+# Context processor
+# =====================
+@app.context_processor
+def inject_user():
+    return dict(current_user={'uid': g.get('uid', None)})
 
-# Add performance headers and compression
-@app.after_request
-def add_performance_headers(response):
-    """Add headers to improve performance and caching"""
-    # Add caching headers for static content
-    if request.endpoint and request.endpoint == 'static':
-        response.cache_control.max_age = 31536000  # 1 year
-        response.cache_control.public = True
-    else:
-        # Prevent caching of dynamic content
-        response.cache_control.no_cache = True
-        response.cache_control.no_store = True
-        response.cache_control.must_revalidate = True
-    
-    # Add security and performance headers
-    response.headers['X-Content-Type-Options'] = 'nosniff'
-    response.headers['X-Frame-Options'] = 'DENY'
-    response.headers['X-XSS-Protection'] = '1; mode=block'
-    
-    # Compression hint
-    if 'gzip' in request.headers.get('Accept-Encoding', ''):
-        response.headers['Vary'] = 'Accept-Encoding'
-    
-    return response
+# =====================
+# Register routes — imported last to avoid circular import
+# =====================
+from routes import routes_bp
+app.register_blueprint(routes_bp)
 
-# Import routes after app is created
-from routes import *
+@app.route('/')
+def home():
+    return render_template('index.html')
 
-with app.app_context():
-    # Import models to ensure tables are created
-    import models
-    db.create_all()
-    
-    # Create upload directory if it doesn't exist
-    os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+if __name__ == '__main__':
+    app.run(debug=True)

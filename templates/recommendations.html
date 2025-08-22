@@ -12,106 +12,78 @@
                     <i class="fas fa-lightbulb text-warning me-2"></i>
                     CPE Recommendations
                 </h2>
-                <p class="text-muted mb-0">Real-world activities for {{ certification.name }} ({{ certification.authority }})</p>
+                <p class="text-muted mb-0">
+                    Real-world activities to help you earn CPEs for {{ certification.name }} ({{ certification.authority }})
+                </p>
             </div>
-            <a href="{{ url_for('certifications') }}" class="btn btn-outline-secondary">
-                <i class="fas fa-arrow-left me-1"></i>Back to Certifications
+
+            <!-- Add Recommendation Button -->
+            <a href="{{ url_for('routes.add_recommendation', cert_id=certification.id) }}" class="btn btn-primary">
+                <i class="fas fa-plus me-1"></i> Add Recommendation
             </a>
         </div>
 
-        <!-- Certification Summary -->
-        <div class="card border-0 shadow-sm mb-4">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header">
+                <h5 class="card-title mb-0">Recommendations for {{ certification.name }}</h5>
+            </div>
             <div class="card-body">
-                <div class="row align-items-center">
+                <div class="row mb-3">
                     <div class="col-md-8">
-                        <h5 class="card-title mb-1">{{ certification.name }}</h5>
-                        <p class="text-muted mb-2">{{ certification.authority }}</p>
-                        <div class="progress" style="height: 8px;">
-                            <div class="progress-bar" role="progressbar" 
-                                 style="width: {{ certification.progress_percentage }}%"
-                                 aria-valuenow="{{ certification.progress_percentage }}" 
-                                 aria-valuemin="0" aria-valuemax="100">
-                            </div>
-                        </div>
-                        <small class="text-muted">{{ certification.earned_cpes }}/{{ certification.required_cpes }} CPEs ({{ "%.1f"|format(certification.progress_percentage) }}%)</small>
+                        <p class="mb-0"><strong>Authority:</strong> {{ certification.authority }}</p>
+                        <p class="mb-0"><strong>Required CPEs:</strong> {{ certification.required_cpes }}</p>
                     </div>
                     <div class="col-md-4 text-md-end">
                         <p class="mb-0"><strong>Renewal Date:</strong></p>
-                        <p class="text-muted">{{ certification.renewal_date.strftime('%B %d, %Y') if certification.renewal_date else 'Not set' }}</p>
+                        <p class="text-muted">
+                            {{ certification.renewal_date.strftime('%B %d, %Y') if certification.renewal_date else 'Not set' }}
+                        </p>
                     </div>
                 </div>
-            </div>
-        </div>
 
-        <!-- Recommendations -->
-        {% if recommendations %}
-        <div class="row">
-            {% for recommendation in recommendations %}
-            <div class="col-lg-6 mb-4">
-                <div class="card border-0 shadow-sm h-100">
-                    <div class="card-body">
-                        <div class="d-flex justify-content-between align-items-start mb-3">
-                            <div>
-                                <h5 class="card-title mb-1">{{ recommendation.title }}</h5>
-                                <span class="badge bg-primary">{{ recommendation.type }}</span>
-                                <span class="badge bg-secondary ms-1">{{ recommendation.source }}</span>
+                <div class="row g-3">
+                    {% if recommendations %}
+                        {% for rec in recommendations %}
+                            <div class="col-md-6">
+                                <div class="card h-100">
+                                    <div class="card-body">
+                                        <h6 class="card-title">{{ rec.title }}</h6>
+                                        <p class="card-text small">{{ rec.description }}</p>
+                                        <div class="mb-2">
+                                            <small class="text-muted"><strong>Source:</strong> {{ rec.provider }}</small><br>
+                                            <small class="text-muted"><strong>Type:</strong> {{ rec.type }}</small><br>
+                                            <small class="text-muted"><strong>Expires:</strong> 
+                                                {% if rec.expires_at %}
+                                                    {{ rec.expires_at }}
+                                                {% else %}
+                                                    Not set
+                                                {% endif %}
+                                            </small>
+                                        </div>
+                                        <div class="d-flex justify-content-between align-items-center">
+                                            <small class="text-muted">{{ rec.cpe }} CPEs</small>
+                                            <button 
+                                                class="btn btn-sm btn-outline-primary"
+                                                onclick="logActivity(
+                                                    '{{ rec.title|escape }}',
+                                                    '{{ rec.description|escape }}',
+                                                    '{{ rec.type|escape }}',
+                                                    '{{ rec.cpe }}',
+                                                    '{{ rec.provider|escape }}',
+                                                    '{{ certification.id }}'
+                                                )">
+                                                Log Activity
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
-                            <span class="badge bg-success">{{ recommendation.cpe_value }} CPE{% if recommendation.cpe_value != 1 %}s{% endif %}</span>
+                        {% endfor %}
+                    {% else %}
+                        <div class="col-12">
+                            <p class="text-muted">No recommendations available.</p>
                         </div>
-                        
-                        <p class="card-text text-muted">{{ recommendation.description }}</p>
-                        
-                        <div class="d-flex justify-content-between align-items-center">
-                            <a href="{{ recommendation.url }}" target="_blank" rel="noopener noreferrer" 
-                               class="btn btn-outline-primary btn-sm">
-                                <i class="fas fa-external-link-alt me-1"></i>Learn More
-                            </a>
-                            <button class="btn btn-success btn-sm" onclick="logActivity('{{ recommendation.title }}', '{{ recommendation.type }}', {{ recommendation.cpe_value }})">
-                                <i class="fas fa-plus me-1"></i>Log This Activity
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            {% endfor %}
-        </div>
-        {% else %}
-        <div class="card border-0 shadow-sm">
-            <div class="card-body text-center py-5">
-                <i class="fas fa-search fa-3x text-muted mb-3"></i>
-                <h4>No Recommendations Found</h4>
-                <p class="text-muted">Unable to fetch real-time recommendations at this moment. Please try again later or explore general cybersecurity training resources.</p>
-                <a href="{{ url_for('add_activity') }}" class="btn btn-primary">
-                    <i class="fas fa-plus me-1"></i>Log Manual Activity
-                </a>
-            </div>
-        </div>
-        {% endif %}
-
-        <!-- Quick Actions -->
-        <div class="card border-0 shadow-sm mt-4">
-            <div class="card-header">
-                <h5 class="card-title mb-0">
-                    <i class="fas fa-rocket text-primary me-2"></i>Quick Actions
-                </h5>
-            </div>
-            <div class="card-body">
-                <div class="row">
-                    <div class="col-md-4 mb-3">
-                        <a href="{{ url_for('add_activity') }}" class="btn btn-outline-primary w-100">
-                            <i class="fas fa-plus-circle me-2"></i>Log New Activity
-                        </a>
-                    </div>
-                    <div class="col-md-4 mb-3">
-                        <a href="{{ url_for('activities') }}" class="btn btn-outline-info w-100">
-                            <i class="fas fa-list me-2"></i>View All Activities
-                        </a>
-                    </div>
-                    <div class="col-md-4 mb-3">
-                        <a href="{{ url_for('export_comprehensive_pdf', cert_id=certification.id) }}" class="btn btn-outline-success w-100">
-                            <i class="fas fa-file-pdf me-2"></i>Export Report
-                        </a>
-                    </div>
+                    {% endif %}
                 </div>
             </div>
         </div>
@@ -119,14 +91,14 @@
 </div>
 
 <script>
-function logActivity(title, type, cpeValue) {
-    // Pre-fill the add activity form with recommendation data
-    const url = new URL('{{ url_for("add_activity") }}', window.location.origin);
-    url.searchParams.set('prefill_description', title);
+function logActivity(title, description, type, cpeValue, provider, certId) {
+    const url = new URL('{{ url_for("routes.add_activity") }}', window.location.origin);
+    url.searchParams.set('prefill_title', title);
+    url.searchParams.set('prefill_description', description);
     url.searchParams.set('prefill_type', type);
     url.searchParams.set('prefill_cpe', cpeValue);
-    url.searchParams.set('prefill_cert', {{ certification.id }});
-    
+    url.searchParams.set('prefill_provider', provider);
+    url.searchParams.set('prefill_cert', certId);
     window.location.href = url.toString();
 }
 </script>

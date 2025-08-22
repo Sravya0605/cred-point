@@ -1,339 +1,145 @@
-"""
-Professional PDF Report Generator for CPE Management Platform
-Generates authority-specific formatted reports with QR codes
-"""
-
-from reportlab.lib import colors
-from reportlab.lib.pagesizes import letter, A4
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.units import inch
+from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
-from reportlab.graphics.shapes import Drawing, Rect
+from reportlab.lib.units import inch
+from reportlab.lib import colors
+from reportlab.graphics.barcode import qr
+from reportlab.graphics.shapes import Drawing
 from reportlab.graphics import renderPDF
-import qrcode
-from io import BytesIO
-import logging
 from datetime import datetime
-from typing import Dict, List, Any, Optional
+from io import BytesIO
 
-logger = logging.getLogger(__name__)
 
-class CPEPDFGenerator:
-    """Professional PDF generator for CPE reports"""
-    
-    def __init__(self):
-        self.styles = getSampleStyleSheet()
-        self._setup_custom_styles()
+def generate_cpe_report(holder_name, certification, member_id, activity):
+    """
+    Generates a CPE report in official certification-body style and returns a BytesIO buffer.
+    """
+    buffer = BytesIO()
+    width, height = A4
+    c = canvas.Canvas(buffer, pagesize=A4)
 
-    def _setup_custom_styles(self):
-        """Setup custom styles for PDF generation"""
-        # Title style
-        self.styles.add(ParagraphStyle(
-            name='CustomTitle',
-            parent=self.styles['Title'],
-            fontSize=24,
-            spaceAfter=30,
-            textColor=colors.HexColor('#2c3e50'),
-            alignment=1  # Center alignment
-        ))
-        
-        # Header style
-        self.styles.add(ParagraphStyle(
-            name='CustomHeader',
-            parent=self.styles['Heading1'],
-            fontSize=16,
-            spaceAfter=12,
-            textColor=colors.HexColor('#34495e'),
-            borderWidth=1,
-            borderColor=colors.HexColor('#bdc3c7'),
-            borderPadding=5
-        ))
-        
-        # Subheader style
-        self.styles.add(ParagraphStyle(
-            name='CustomSubheader',
-            parent=self.styles['Heading2'],
-            fontSize=12,
-            spaceBefore=6,
-            spaceAfter=6,
-            textColor=colors.HexColor('#7f8c8d')
-        ))
+    # Holder Info (title removed)
+    y = height - 1.5*inch
+    c.setFont("Helvetica", 12)
+    c.drawString(1*inch, y, f"Certification Holder Name: {holder_name}")
+    y -= 0.4*inch
+    c.drawString(1*inch, y, f"Certification ID / Member ID: {member_id}")
+    y -= 0.4*inch
+    c.drawString(1*inch, y, f"Certification: {certification}")
 
-    def generate_single_activity_report(self, activity_data: Dict[str, Any], 
-                                      certification_data: Dict[str, Any],
-                                      verification_data: Optional[Dict[str, Any]] = None) -> bytes:
-        """
-        Generate PDF report for a single CPE activity
-        
-        Args:
-            activity_data: Activity information
-            certification_data: Certification details
-            verification_data: Verification status and notes
-            
-        Returns:
-            PDF data as bytes
-        """
-        buffer = BytesIO()
-        doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=72, bottomMargin=72)
-        story = []
-        
-        # Title
-        title = Paragraph("CPE Activity Report", self.styles['CustomTitle'])
-        story.append(title)
-        story.append(Spacer(1, 20))
-        
-        # Activity Details Section
-        story.append(Paragraph("Activity Information", self.styles['CustomHeader']))
-        
-        activity_table_data = [
-            ['Activity Type:', activity_data.get('activity_type', 'N/A')],
-            ['Description:', activity_data.get('description', 'N/A')],
-            ['CPE Value:', f"{activity_data.get('cpe_value', 0)} CPE Credits"],
-            ['Activity Date:', activity_data.get('activity_date', 'N/A').strftime('%B %d, %Y') if activity_data.get('activity_date') else 'N/A'],
-            ['Proof File:', activity_data.get('original_filename', 'No file uploaded')]
-        ]
-        
-        activity_table = Table(activity_table_data, colWidths=[2*inch, 4*inch])
-        activity_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#ecf0f1')),
-            ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
-            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
-            ('FONTNAME', (1, 0), (1, -1), 'Helvetica'),
-            ('FONTSIZE', (0, 0), (-1, -1), 10),
-            ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#bdc3c7')),
-            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ]))
-        
-        story.append(activity_table)
-        story.append(Spacer(1, 20))
-        
-        # Certification Details Section
-        story.append(Paragraph("Certification Information", self.styles['CustomHeader']))
-        
-        cert_table_data = [
-            ['Certification:', certification_data.get('name', 'N/A')],
-            ['Authority:', certification_data.get('authority', 'N/A')],
-            ['Required CPEs:', str(certification_data.get('required_cpes', 'N/A'))],
-            ['Earned CPEs:', str(certification_data.get('earned_cpes', 'N/A'))],
-            ['Renewal Date:', certification_data.get('renewal_date', 'N/A').strftime('%B %d, %Y') if certification_data.get('renewal_date') else 'N/A']
-        ]
-        
-        cert_table = Table(cert_table_data, colWidths=[2*inch, 4*inch])
-        cert_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#ecf0f1')),
-            ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
-            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
-            ('FONTNAME', (1, 0), (1, -1), 'Helvetica'),
-            ('FONTSIZE', (0, 0), (-1, -1), 10),
-            ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#bdc3c7')),
-            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ]))
-        
-        story.append(cert_table)
-        story.append(Spacer(1, 20))
-        
-        # Verification Section
-        if verification_data:
-            story.append(Paragraph("Verification Status", self.styles['CustomHeader']))
-            
-            verification_status = "Verified" if verification_data.get('verified') else "Pending Verification"
-            verification_color = colors.green if verification_data.get('verified') else colors.orange
-            
-            verification_table_data = [
-                ['Status:', verification_status],
-                ['Method:', verification_data.get('verification_method', 'Manual')],
-                ['Notes:', verification_data.get('verification_notes', 'No additional notes')]
-            ]
-            
-            verification_table = Table(verification_table_data, colWidths=[2*inch, 4*inch])
-            verification_table.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#ecf0f1')),
-                ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
-                ('TEXTCOLOR', (1, 0), (1, 0), verification_color),
-                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-                ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
-                ('FONTNAME', (1, 0), (1, -1), 'Helvetica'),
-                ('FONTSIZE', (0, 0), (-1, -1), 10),
-                ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#bdc3c7')),
-                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-            ]))
-            
-            story.append(verification_table)
-            story.append(Spacer(1, 20))
-        
-        # QR Code for verification
-        story.append(Paragraph("Verification QR Code", self.styles['CustomHeader']))
-        qr_code_image = self._generate_qr_code(f"CPE Activity: {activity_data.get('description', 'N/A')}")
-        if qr_code_image:
-            story.append(qr_code_image)
-        
-        # Footer
-        story.append(Spacer(1, 30))
-        footer_text = f"Generated on {datetime.now().strftime('%B %d, %Y at %I:%M %p')}"
-        footer = Paragraph(footer_text, self.styles['CustomSubheader'])
-        story.append(footer)
-        
-        doc.build(story)
-        buffer.seek(0)
-        return buffer.getvalue()
+    # Section Line
+    y -= 0.6*inch
+    c.setStrokeColor(colors.black)
+    c.line(1*inch, y, width-1*inch, y)
 
-    def generate_comprehensive_report(self, activities_data: List[Dict[str, Any]], 
-                                    certification_data: Dict[str, Any],
-                                    user_data: Dict[str, Any]) -> bytes:
-        """
-        Generate comprehensive CPE report for all activities
-        
-        Args:
-            activities_data: List of all activities
-            certification_data: Certification details
-            user_data: User information
-            
-        Returns:
-            PDF data as bytes
-        """
-        buffer = BytesIO()
-        doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=72, bottomMargin=72)
-        story = []
-        
-        # Title
-        title = Paragraph(f"CPE Comprehensive Report - {certification_data.get('name', 'Unknown Certification')}", 
-                         self.styles['CustomTitle'])
-        story.append(title)
-        story.append(Spacer(1, 20))
-        
-        # User Information
-        story.append(Paragraph("Professional Information", self.styles['CustomHeader']))
-        
-        user_table_data = [
-            ['Name:', user_data.get('username', 'N/A')],
-            ['Email:', user_data.get('email', 'N/A')],
-            ['Report Date:', datetime.now().strftime('%B %d, %Y')]
-        ]
-        
-        user_table = Table(user_table_data, colWidths=[2*inch, 4*inch])
-        user_table.setStyle(self._get_table_style())
-        story.append(user_table)
-        story.append(Spacer(1, 20))
-        
-        # Certification Summary
-        story.append(Paragraph("Certification Summary", self.styles['CustomHeader']))
-        
-        total_earned = sum(activity.get('cpe_value', 0) for activity in activities_data)
-        progress_percentage = (total_earned / certification_data.get('required_cpes', 1)) * 100
-        
-        summary_table_data = [
-            ['Certification:', certification_data.get('name', 'N/A')],
-            ['Authority:', certification_data.get('authority', 'N/A')],
-            ['Required CPEs:', str(certification_data.get('required_cpes', 'N/A'))],
-            ['Earned CPEs:', f"{total_earned:.1f}"],
-            ['Progress:', f"{progress_percentage:.1f}%"],
-            ['Renewal Date:', certification_data.get('renewal_date', 'N/A').strftime('%B %d, %Y') if certification_data.get('renewal_date') else 'N/A']
-        ]
-        
-        summary_table = Table(summary_table_data, colWidths=[2*inch, 4*inch])
-        summary_table.setStyle(self._get_table_style())
-        story.append(summary_table)
-        story.append(Spacer(1, 30))
-        
-        # Activities Table
-        story.append(Paragraph("CPE Activities Log", self.styles['CustomHeader']))
-        
-        if activities_data:
-            # Table headers
-            activities_table_data = [
-                ['Date', 'Type', 'Description', 'CPE Value', 'Status']
-            ]
-            
-            # Add activity rows
-            for activity in activities_data:
-                status = "✓ Verified" if activity.get('verified') else "⏳ Pending"
-                activities_table_data.append([
-                    activity.get('activity_date', 'N/A').strftime('%m/%d/%Y') if activity.get('activity_date') else 'N/A',
-                    activity.get('activity_type', 'N/A'),
-                    activity.get('description', 'N/A')[:40] + '...' if len(activity.get('description', '')) > 40 else activity.get('description', 'N/A'),
-                    f"{activity.get('cpe_value', 0):.1f}",
-                    status
-                ])
-            
-            activities_table = Table(activities_table_data, colWidths=[1*inch, 1*inch, 2.5*inch, 0.8*inch, 0.7*inch])
-            activities_table.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#34495e')),
-                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
-                ('FONTSIZE', (0, 0), (-1, 0), 10),
-                ('FONTSIZE', (0, 1), (-1, -1), 9),
-                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-                ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#ecf0f1')),
-                ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#bdc3c7')),
-                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-            ]))
-            
-            story.append(activities_table)
+    # Normalize to list
+    activities = activity if isinstance(activity, list) else [activity]
+
+    for act in activities:
+        # Activity Section
+        y -= 0.8*inch
+        c.setFont("Helvetica-Bold", 13)
+        c.drawString(1*inch, y, "CPE Activity Details")
+
+        c.setFont("Helvetica", 11)
+        y -= 0.4*inch
+        c.drawString(1*inch, y, f"Activity Title / Name: {act.get('title','')}")
+        y -= 0.3*inch
+        c.drawString(1*inch, y, f"Organizer / Institution: {act.get('provider','')}")
+
+        # --- Date(s) Attended (use activity_date if present; fallback to start/end) ---
+        y -= 0.3*inch
+        date_text = ""
+        act_date = act.get('activity_date')
+        if act_date:
+            try:
+                dt = datetime.fromisoformat(str(act_date)).date()
+                date_text = dt.strftime('%d/%m/%Y')
+            except Exception:
+                try:
+                    date_text = act_date.strftime('%d/%m/%Y')
+                except Exception:
+                    date_text = str(act_date)
         else:
-            story.append(Paragraph("No activities logged yet.", self.styles['Normal']))
-        
-        story.append(Spacer(1, 30))
-        
-        # QR Code for verification
-        story.append(Paragraph("Report Verification", self.styles['CustomHeader']))
-        qr_code_image = self._generate_qr_code(f"CPE Report: {certification_data.get('name', 'Unknown')} - {total_earned:.1f} CPEs")
-        if qr_code_image:
-            story.append(qr_code_image)
-        
-        # Footer
-        story.append(Spacer(1, 30))
-        footer_text = f"Generated on {datetime.now().strftime('%B %d, %Y at %I:%M %p')} | CPE Management Platform"
-        footer = Paragraph(footer_text, self.styles['CustomSubheader'])
-        story.append(footer)
-        
-        doc.build(story)
-        buffer.seek(0)
-        return buffer.getvalue()
+            s = str(act.get('start_date', '') or '')
+            e = str(act.get('end_date', '') or '')
+            date_text = f"{s} - {e}".strip(" -")
 
-    def _get_table_style(self) -> TableStyle:
-        """Get standard table style"""
-        return TableStyle([
-            ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#ecf0f1')),
-            ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
-            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
-            ('FONTNAME', (1, 0), (1, -1), 'Helvetica'),
-            ('FONTSIZE', (0, 0), (-1, -1), 10),
-            ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#bdc3c7')),
-            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ])
+        c.drawString(1*inch, y, f"Date(s) Attended: {date_text}")
 
-    def _generate_qr_code(self, data: str) -> Optional[Image]:
-        """Generate QR code for verification"""
-        try:
-            qr = qrcode.QRCode(
-                version=1,
-                error_correction=qrcode.constants.ERROR_CORRECT_L,
-                box_size=3,
-                border=4,
-            )
-            qr.add_data(data)
-            qr.make(fit=True)
-            
-            img = qr.make_image(fill_color="black", back_color="white")
-            
-            # Convert to bytes
-            img_buffer = BytesIO()
-            img.save(img_buffer, format='PNG')
-            img_buffer.seek(0)
-            
-            # Create ReportLab Image
-            qr_image = Image(img_buffer, width=1.5*inch, height=1.5*inch)
-            return qr_image
-            
-        except Exception as e:
-            logger.error(f"Error generating QR code: {str(e)}")
-            return None
+        # --- Removed Duration (Hours) line ---
 
-# Global instance
-pdf_generator = CPEPDFGenerator()
+        y -= 0.3*inch
+        c.drawString(1*inch, y, f"Type of Activity: {act.get('activity_type','')}")
+        y -= 0.3*inch
+        c.drawString(1*inch, y, "Description / Summary:")
+        y -= 0.3*inch
+
+        text_obj = c.beginText(1.2*inch, y)
+        text_obj.setFont("Helvetica", 10)
+        text_obj.textLines(act.get("description", ""))
+        c.drawText(text_obj)
+
+        # Move below description
+        y = text_obj.getY() - 0.3*inch
+        c.setFont("Helvetica", 11)
+
+        # Supporting docs + QR (file name removed)
+        proof_name = act.get('proof_file') or act.get('proof') or ''
+        proof_url = ''
+        if proof_name:
+            try:
+                from flask import url_for
+                proof_url = url_for('static', filename=f'uploads/{proof_name}', _external=True)
+            except Exception:
+                proof_url = f"/static/uploads/{proof_name}"
+
+        c.drawString(1*inch, y, "Supporting Documents Attached:")
+
+        if proof_url:
+            qr_size = 0.9 * inch
+            qr_widget = qr.QrCodeWidget(proof_url)
+            bounds = qr_widget.getBounds()
+            bw = bounds[2] - bounds[0]
+            bh = bounds[3] - bounds[1]
+            qr_drawing = Drawing(qr_size, qr_size, transform=[qr_size/bw, 0, 0, qr_size/bh, 0, 0])
+            qr_drawing.add(qr_widget)
+
+            qr_x = 1 * inch
+            qr_y = y - qr_size - 0.1*inch
+            renderPDF.draw(qr_drawing, c, qr_x, qr_y)
+            y = qr_y - 0.3*inch
+        else:
+            y -= 0.5*inch
+
+        # Total CPE (use cpe_points)
+        c.setFont("Helvetica-Bold", 12)
+        c.drawString(1*inch, y, f"Total CPEs Earned: {act.get('cpe_points','')}")
+        y -= 0.2*inch
+
+        # Declaration
+        y -= 0.8*inch
+        c.setFont("Helvetica", 11)
+        c.drawString(1*inch, y, "Declaration:")
+        y -= 0.4*inch
+        c.setFont("Helvetica", 10)
+        c.drawString(1.2*inch, y, "I hereby declare that the above information is true and accurate to the best")
+        y -= 0.3*inch
+        c.drawString(1.2*inch, y, "of my knowledge. I understand that providing false information may affect")
+        y -= 0.3*inch
+        c.drawString(1.2*inch, y, "my certification status.")
+
+        # Signature + Date (today)
+        y -= 1*inch
+        c.setFont("Helvetica", 11)
+        c.drawString(1*inch, y, "Signature: ______________________________")
+        c.drawString(width/2 + 0.5*inch, y, f"Date: {datetime.now().strftime('%d/%m/%Y')}")
+
+        if act != activities[-1]:
+            c.showPage()
+            y = height - 1.5*inch
+
+    c.showPage()
+    c.save()
+
+    buffer.seek(0)
+    return buffer

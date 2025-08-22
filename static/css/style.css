@@ -1,5 +1,7 @@
 /* Custom styles for CPE Management Platform - Optimized for performance */
-
+html, body {
+    height: 100%;
+}
 :root {
     --primary-color: #0d6efd;
     --success-color: #198754;
@@ -15,6 +17,11 @@
 
 body {
     font-display: swap; /* Improve font loading */
+    display: flex;
+    flex-direction: column;
+}
+main {
+    flex: 1;
 }
 
 /* Reduce layout shifts */
